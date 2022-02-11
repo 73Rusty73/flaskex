@@ -1,0 +1,81 @@
+---
+- name: Config Ubuntu and docker run to test servers
+  hosts: all
+  become: true
+  remote_user: user
+  gather_facts: false  
+
+  vars:
+    create_user: sysadmin
+    copy_local_key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/id_rsa.pub') }}"
+    sys_packages: ['curl', 'ufw', 'apt-transport-https', 'ca-certificates', 'software-properties-common', 'python3-pip', 'virtualenv', 'python3-setuptools', 'docker.io'] 
+    create_containers: 1
+    default_container_name: flaskex
+    default_container_image: 73rusty73/flaskex
+    
+  tasks:
+   
+  - name: Make sure we have a manage group
+    group:
+         name: manage
+         state: present
+
+  - name: Allow manage group to have passwordless sudo
+    lineinfile:
+         path: /etc/sudoers
+         state: present
+         regexp: "^%manage"
+         line: "%manage ALL=(ALL) NOPASSWD: ALL"
+         validate: "/usr/sbin/visudo -cf %s"
+
+  - name: Create a new regular user with sudo privileges
+    user:
+         name: "{{ create_user }}"
+         groups: manage
+         shell: /bin/bash
+
+  - name: Set authorized key for remote user
+    authorized_key:
+         user: "{{ create_user }}"
+         state: present
+         key: "{{ copy_local_key }}"
+
+  - name: Disable password authentication for root
+    lineinfile:
+         path: /etc/ssh/sshd_config
+         state: present
+         regexp: "^PermitRootLogin"
+         line: "PermitRootLogin prohibit-password"
+   
+  - name: Update apt
+    apt: update_cache=yes
+    
+  - name: Install required system packages
+    apt: name={{ sys_packages }} state=latest
+    
+  - name: UFW - Allow SSH connections
+    ufw:
+         rule: allow
+         name: OpenSSH
+
+  - name: UFW - Deny all other incoming traffic by default
+    ufw:
+         state: enabled
+         policy: deny
+         direction: incoming
+
+  - name: Install Docker module for Python
+    pip:
+         name: docker
+
+  - name: Pull Docker image
+    docker_image:
+         name: "{{ default_container_image }}"
+         
+  - name: Create containers
+    docker_container:
+         name: "{{ default_container_name }}_{{ item }}"
+         image: "{{ default_container_image }}"
+         ports: 
+           - "5000:5000" 
+    with_sequence: count={{ create_containers }}
