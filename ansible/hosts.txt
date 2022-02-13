@@ -1,0 +1,5 @@
+[test_servers]
+ansible_test  ansible_host=192.168.0.32
+
+[test_servers:vars]
+ansible_python_interpreter=/usr/bin/python3
